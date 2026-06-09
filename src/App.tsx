@@ -2,6 +2,7 @@ import { ChangeEvent, FormEvent, useMemo, useState } from 'react';
 
 type Language = 'pt' | 'en';
 type ResultState = 'idle' | 'missing-input' | 'pending-integration';
+type ArxivStatus = 'idle' | 'loading' | 'success' | 'error';
 
 const copy = {
   pt: {
@@ -10,6 +11,15 @@ const copy = {
     subtitle:
       'Uma interface acadêmica para classificar artigos científicos a partir do abstract, preparada para receber o motor de inferência nas próximas etapas.',
     language: 'Idioma',
+    arxivTitle: 'Link do arXiv',
+    arxivHint:
+      'Cole o link do artigo no arXiv para buscar o abstract automaticamente.',
+    arxivPlaceholder: 'Ex.: https://arxiv.org/abs/2301.12345',
+    arxivButton: 'Buscar abstract',
+    arxivLoading: 'Buscando...',
+    arxivSuccess: 'Abstract carregado com sucesso',
+    arxivInvalidUrl: 'URL inválida. Use o formato https://arxiv.org/abs/XXXX.XXXXX',
+    arxivFetchError: 'Erro ao buscar o artigo. Verifique o link e tente novamente.',
     uploadTitle: 'Anexar paper em PDF',
     uploadHint: 'Selecione um arquivo PDF para a futura etapa de extração de texto.',
     uploadButton: 'Escolher PDF',
@@ -22,7 +32,7 @@ const copy = {
       'Ex.: We propose a neural approach for representation learning in scientific documents...',
     chars: 'caracteres',
     analyze: 'Preparar análise',
-    validation: 'Envie um PDF ou cole um abstract antes de preparar a análise.',
+    validation: 'Envie um PDF, cole um abstract ou insira um link do arXiv antes de preparar a análise.',
     resultTitle: 'Retorno do sistema',
     idleResult:
       'A área de retorno está pronta. Quando a inferência for integrada, ela exibirá categorias amplas do arXiv e indicadores de confiança.',
@@ -55,6 +65,14 @@ const copy = {
     subtitle:
       'An academic interface for classifying scientific papers from abstracts, ready to receive the inference engine in the next stages.',
     language: 'Language',
+    arxivTitle: 'arXiv link',
+    arxivHint: 'Paste an arXiv article URL to automatically fetch its abstract.',
+    arxivPlaceholder: 'E.g.: https://arxiv.org/abs/2301.12345',
+    arxivButton: 'Fetch abstract',
+    arxivLoading: 'Fetching...',
+    arxivSuccess: 'Abstract loaded successfully',
+    arxivInvalidUrl: 'Invalid URL. Use the format https://arxiv.org/abs/XXXX.XXXXX',
+    arxivFetchError: 'Failed to fetch the paper. Check the link and try again.',
     uploadTitle: 'Attach paper PDF',
     uploadHint: 'Select a PDF file for the future text extraction step.',
     uploadButton: 'Choose PDF',
@@ -67,7 +85,7 @@ const copy = {
       'Example: We propose a neural approach for representation learning in scientific documents...',
     chars: 'characters',
     analyze: 'Prepare analysis',
-    validation: 'Upload a PDF or paste an abstract before preparing the analysis.',
+    validation: 'Upload a PDF, paste an abstract, or enter an arXiv link before preparing the analysis.',
     resultTitle: 'System output',
     idleResult:
       'The output area is ready. Once inference is integrated, it will display broad arXiv categories and confidence indicators.',
@@ -96,11 +114,21 @@ const copy = {
   },
 } satisfies Record<Language, Record<string, string | string[]>>;
 
+function parseArxivId(input: string): string | null {
+  const trimmed = input.trim();
+  const match = trimmed.match(/(\d{4}\.\d{4,5}(?:v\d+)?|[a-z-]+(?:\.[A-Z]+)?\/\d{7}(?:v\d+)?)/);
+  if (!match) return null;
+  return match[1].replace(/v\d+$/, '');
+}
+
 function App() {
   const [language, setLanguage] = useState<Language>('pt');
   const [fileName, setFileName] = useState('');
   const [abstractText, setAbstractText] = useState('');
   const [resultState, setResultState] = useState<ResultState>('idle');
+  const [arxivUrl, setArxivUrl] = useState('');
+  const [arxivStatus, setArxivStatus] = useState<ArxivStatus>('idle');
+  const [arxivMessage, setArxivMessage] = useState('');
 
   const t = copy[language];
   const hasInput = Boolean(fileName || abstractText.trim());
@@ -120,6 +148,31 @@ function App() {
   function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setResultState(hasInput ? 'pending-integration' : 'missing-input');
+  }
+
+  async function handleFetchArxiv() {
+    const id = parseArxivId(arxivUrl);
+    if (!id) {
+      setArxivStatus('error');
+      setArxivMessage(String(t.arxivInvalidUrl));
+      return;
+    }
+    setArxivStatus('loading');
+    setArxivMessage('');
+    try {
+      const res = await fetch(`https://export.arxiv.org/api/query?id_list=${id}`);
+      const text = await res.text();
+      const doc = new DOMParser().parseFromString(text, 'application/xml');
+      const summary = doc.querySelector('entry summary');
+      if (!summary?.textContent?.trim()) throw new Error('not found');
+      setAbstractText(summary.textContent.trim());
+      setArxivStatus('success');
+      setArxivMessage(String(t.arxivSuccess));
+      setResultState('idle');
+    } catch {
+      setArxivStatus('error');
+      setArxivMessage(String(t.arxivFetchError));
+    }
   }
 
   return (
@@ -185,6 +238,42 @@ function App() {
           <div className="section-heading">
             <span className="section-index">01</span>
             <div>
+              <h2>{t.arxivTitle}</h2>
+              <p>{t.arxivHint}</p>
+            </div>
+          </div>
+
+          <div className="arxiv-input-row">
+            <input
+              className="arxiv-url-input"
+              type="url"
+              value={arxivUrl}
+              onChange={(e) => {
+                setArxivUrl(e.target.value);
+                setArxivStatus('idle');
+                setArxivMessage('');
+              }}
+              placeholder={String(t.arxivPlaceholder)}
+            />
+            <button
+              type="button"
+              className="arxiv-fetch-btn"
+              onClick={handleFetchArxiv}
+              disabled={arxivStatus === 'loading'}
+            >
+              {arxivStatus === 'loading' ? t.arxivLoading : t.arxivButton}
+            </button>
+          </div>
+
+          {arxivMessage ? (
+            <div className={`status-pill ${arxivStatus === 'success' ? 'success' : 'error'}`}>
+              {arxivMessage}
+            </div>
+          ) : null}
+
+          <div className="section-heading compact">
+            <span className="section-index">02</span>
+            <div>
               <h2>{t.uploadTitle}</h2>
               <p>{t.uploadHint}</p>
             </div>
@@ -202,7 +291,7 @@ function App() {
           {fileName ? <div className="status-pill success">{t.fileReady}</div> : null}
 
           <div className="section-heading compact">
-            <span className="section-index">02</span>
+            <span className="section-index">03</span>
             <div>
               <h2>{t.abstractTitle}</h2>
               <p>{t.abstractHint}</p>
@@ -224,7 +313,7 @@ function App() {
 
         <section className="result-panel glass" aria-live="polite">
           <div className="result-header">
-            <span className="section-index">03</span>
+            <span className="section-index">04</span>
             <h2>{t.resultTitle}</h2>
           </div>
 

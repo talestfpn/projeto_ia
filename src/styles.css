@@ -372,6 +372,63 @@ h2 {
   color: var(--muted);
 }
 
+.arxiv-input-row {
+  display: flex;
+  gap: 10px;
+  margin-top: 18px;
+}
+
+.arxiv-url-input {
+  flex: 1;
+  min-height: 48px;
+  border: 1px solid rgba(35, 83, 71, 0.14);
+  border-radius: 16px;
+  padding: 0 16px;
+  color: var(--ink);
+  background: rgba(255, 255, 255, 0.44);
+  font: inherit;
+  font-size: 0.95rem;
+  outline: none;
+  transition:
+    box-shadow 180ms ease,
+    border-color 180ms ease;
+}
+
+.arxiv-url-input:focus {
+  border-color: rgba(43, 138, 131, 0.7);
+  box-shadow: 0 0 0 4px rgba(43, 138, 131, 0.12);
+}
+
+.arxiv-url-input::placeholder {
+  color: var(--muted);
+}
+
+.arxiv-fetch-btn {
+  flex: 0 0 auto;
+  min-height: 48px;
+  border: 0;
+  border-radius: 16px;
+  padding: 0 18px;
+  color: white;
+  font-weight: 900;
+  background: linear-gradient(135deg, var(--teal), var(--blue));
+  box-shadow: 0 10px 24px rgba(43, 138, 131, 0.22);
+  transition:
+    transform 180ms ease,
+    box-shadow 180ms ease,
+    opacity 180ms ease;
+}
+
+.arxiv-fetch-btn:hover:not(:disabled) {
+  transform: translateY(-2px);
+  box-shadow: 0 14px 28px rgba(43, 138, 131, 0.28);
+}
+
+.arxiv-fetch-btn:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
 .status-pill {
   display: inline-flex;
   width: fit-content;
@@ -387,6 +444,11 @@ h2 {
 .status-pill.success {
   color: var(--green);
   background: rgba(43, 138, 131, 0.14);
+}
+
+.status-pill.error {
+  color: var(--wine);
+  background: rgba(154, 63, 85, 0.13);
 }
 
 .status-pill.neutral {
