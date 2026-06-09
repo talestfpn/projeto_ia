@@ -1,7 +1,28 @@
-node_modules
-dist
+# dependencies
+node_modules/
+
+# build output
+dist/
+dist-ssr/
+
+# env files
 .env
 .env.local
-.DS_Store
+.env.*.local
 *.local
+
+# logs
+*.log
+npm-debug.log*
 dev-server*.log
+
+# editor
+.vscode/
+.idea/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# TypeScript cache
+*.tsbuildinfo
