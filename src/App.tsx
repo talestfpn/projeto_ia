@@ -1,15 +1,37 @@
 import { ChangeEvent, FormEvent, useMemo, useState } from 'react';
 
 type Language = 'pt' | 'en';
-type ResultState = 'idle' | 'missing-input' | 'pending-integration';
 type ArxivStatus = 'idle' | 'loading' | 'success' | 'error';
+type AnalysisStatus = 'idle' | 'loading' | 'success' | 'error';
+
+const API_URL = (import.meta.env.VITE_API_URL as string | undefined) ?? 'http://localhost:8000';
+
+interface CatScore {
+  category: string;
+  score: number;
+}
+
+interface SimilarPaper {
+  id: string;
+  title: string;
+  category: string;
+  similarity: number;
+  url: string;
+}
+
+interface ClassifyResult {
+  predicted_category: string;
+  confidence: number;
+  ranking: CatScore[];
+  similar_papers: SimilarPaper[];
+}
 
 const copy = {
   pt: {
-    eyebrow: 'Demonstração frontend',
+    eyebrow: 'Classificador de artigos',
     title: 'Arxiv Classifier',
     subtitle:
-      'Uma interface acadêmica para classificar artigos científicos a partir do abstract, preparada para receber o motor de inferência nas próximas etapas.',
+      'Cole o abstract de um artigo científico e descubra em qual categoria do arXiv ele melhor se encaixa, além de papers similares do nosso banco.',
     language: 'Idioma',
     arxivTitle: 'Link do arXiv',
     arxivHint:
@@ -27,43 +49,48 @@ const copy = {
     fileReady: 'Arquivo pronto para demonstração',
     abstractTitle: 'Colar abstract',
     abstractHint:
-      'Cole o resumo do artigo para preparar a entrada que será enviada ao pipeline de classificação.',
+      'Cole o resumo do artigo que será enviado ao motor de classificação.',
     abstractPlaceholder:
       'Ex.: We propose a neural approach for representation learning in scientific documents...',
     chars: 'caracteres',
-    analyze: 'Preparar análise',
-    validation: 'Envie um PDF, cole um abstract ou insira um link do arXiv antes de preparar a análise.',
+    analyze: 'Classificar abstract',
+    analyzing: 'Classificando...',
+    validation: 'Cole um abstract (ou busque pelo link do arXiv) antes de classificar.',
+    backendError:
+      'Não foi possível conectar ao motor de inferência. Confira se o backend está rodando em ',
     resultTitle: 'Retorno do sistema',
     idleResult:
-      'A área de retorno está pronta. Quando a inferência for integrada, ela exibirá categorias amplas do arXiv e indicadores de confiança.',
-    pendingTitle: 'Motor de inferência em desenvolvimento',
-    pendingText:
-      'Entrada recebida no frontend. A extração de PDF, o pré-processamento e a predição real serão conectados na próxima fase do projeto.',
-    honestLabel: 'Sem predição simulada',
-    pipelineTitle: 'Pipeline planejado',
-    pipeline: ['Entrada do paper', 'Pré-processamento', 'Representação vetorial', 'Classificação'],
+      'A área de retorno está pronta. Cole um abstract e clique em "Classificar abstract" para ver a categoria prevista e papers similares.',
+    predictedTitle: 'Categoria prevista',
+    confidenceLabel: 'confiança',
+    otherCandidates: 'Outras categorias prováveis',
+    similarTitle: 'Papers similares',
+    similarHint: 'Os mais próximos no banco de 1.500 artigos.',
+    similarityLabel: 'similaridade',
+    pipelineTitle: 'Pipeline',
+    pipeline: ['Entrada do abstract', 'Embedding (SPECTER)', 'SVM + vizinhos', 'Categoria + similares'],
     datasetTitle: 'Base de conhecimento',
     datasetText:
       'O projeto usa o arXiv Dataset da Cornell University como fonte de abstracts, títulos, autores e categorias.',
-    categoriesTitle: 'Categorias amplas',
+    categoriesTitle: 'Categorias',
     categoriesText:
-      'A primeira versão classifica no nível principal, como cs, math e physics, deixando subáreas para uma evolução futura.',
-    singleTitle: 'Single-label',
+      'O sistema classifica nas 15 maiores categorias finas do projeto (cs.LG, hep-ph, cs.CV, astro-ph, e outras).',
+    singleTitle: 'Embeddings SPECTER',
     singleText:
-      'Avalia uma categoria principal por artigo com acurácia, precisão, recall, F1 e matriz de confusão.',
-    multiTitle: 'Multi-label',
+      'Cada abstract vira um vetor de 768 dimensões com um BERT treinado em artigos científicos.',
+    multiTitle: 'Papers similares',
     multiText:
-      'Permite múltiplas categorias por artigo e compara F1 micro/macro com Hamming loss.',
-    modelTitle: 'Modelos futuros',
+      'A similaridade do cosseno entre embeddings recupera os artigos mais parecidos do banco.',
+    modelTitle: 'Classificador',
     modelText:
-      'A comparação planejada inclui baseline TF-IDF com classificador linear e uma rede neural selecionada pelas métricas.',
-    sampleTags: ['cs', 'math', 'physics', 'q-bio', 'stat'],
+      'Um SVM linear treinado sobre os embeddings decide a categoria mais provável do abstract.',
+    sampleTags: ['cs.LG', 'hep-ph', 'cs.CV', 'astro-ph', 'quant-ph'],
   },
   en: {
-    eyebrow: 'Frontend demo',
+    eyebrow: 'Paper classifier',
     title: 'Arxiv Classifier',
     subtitle:
-      'An academic interface for classifying scientific papers from abstracts, ready to receive the inference engine in the next stages.',
+      'Paste a scientific paper abstract and discover which arXiv category it best fits, plus similar papers from our database.',
     language: 'Language',
     arxivTitle: 'arXiv link',
     arxivHint: 'Paste an arXiv article URL to automatically fetch its abstract.',
@@ -80,37 +107,42 @@ const copy = {
     fileReady: 'File ready for demo',
     abstractTitle: 'Paste abstract',
     abstractHint:
-      'Paste the paper abstract to prepare the input that will later be sent to the classification pipeline.',
+      'Paste the paper abstract that will be sent to the classification engine.',
     abstractPlaceholder:
       'Example: We propose a neural approach for representation learning in scientific documents...',
     chars: 'characters',
-    analyze: 'Prepare analysis',
-    validation: 'Upload a PDF, paste an abstract, or enter an arXiv link before preparing the analysis.',
+    analyze: 'Classify abstract',
+    analyzing: 'Classifying...',
+    validation: 'Paste an abstract (or fetch it from an arXiv link) before classifying.',
+    backendError:
+      'Could not reach the inference engine. Make sure the backend is running at ',
     resultTitle: 'System output',
     idleResult:
-      'The output area is ready. Once inference is integrated, it will display broad arXiv categories and confidence indicators.',
-    pendingTitle: 'Inference engine in development',
-    pendingText:
-      'Input received by the frontend. PDF extraction, preprocessing, and real prediction will be connected in the next project phase.',
-    honestLabel: 'No simulated prediction',
-    pipelineTitle: 'Planned pipeline',
-    pipeline: ['Paper input', 'Preprocessing', 'Vector representation', 'Classification'],
+      'The output area is ready. Paste an abstract and click "Classify abstract" to see the predicted category and similar papers.',
+    predictedTitle: 'Predicted category',
+    confidenceLabel: 'confidence',
+    otherCandidates: 'Other likely categories',
+    similarTitle: 'Similar papers',
+    similarHint: 'The closest ones in the 1,500-paper database.',
+    similarityLabel: 'similarity',
+    pipelineTitle: 'Pipeline',
+    pipeline: ['Abstract input', 'Embedding (SPECTER)', 'SVM + neighbors', 'Category + similar'],
     datasetTitle: 'Knowledge base',
     datasetText:
       'The project uses the Cornell University arXiv Dataset as a source of abstracts, titles, authors, and categories.',
-    categoriesTitle: 'Broad categories',
+    categoriesTitle: 'Categories',
     categoriesText:
-      'The first version classifies at the main level, such as cs, math, and physics, keeping subareas for a future evolution.',
-    singleTitle: 'Single-label',
+      'The system classifies into the 15 largest fine-grained categories (cs.LG, hep-ph, cs.CV, astro-ph, and others).',
+    singleTitle: 'SPECTER embeddings',
     singleText:
-      'Evaluates one main category per paper with accuracy, precision, recall, F1, and confusion matrix.',
-    multiTitle: 'Multi-label',
+      'Each abstract becomes a 768-dimensional vector using a BERT trained on scientific papers.',
+    multiTitle: 'Similar papers',
     multiText:
-      'Allows multiple categories per paper and compares micro/macro F1 with Hamming loss.',
-    modelTitle: 'Future models',
+      'Cosine similarity between embeddings retrieves the most alike articles in the database.',
+    modelTitle: 'Classifier',
     modelText:
-      'The planned comparison includes a TF-IDF baseline with a linear classifier and a neural network selected by metrics.',
-    sampleTags: ['cs', 'math', 'physics', 'q-bio', 'stat'],
+      'A linear SVM trained on the embeddings decides the most likely category for the abstract.',
+    sampleTags: ['cs.LG', 'hep-ph', 'cs.CV', 'astro-ph', 'quant-ph'],
   },
 } satisfies Record<Language, Record<string, string | string[]>>;
 
@@ -125,29 +157,60 @@ function App() {
   const [language, setLanguage] = useState<Language>('pt');
   const [fileName, setFileName] = useState('');
   const [abstractText, setAbstractText] = useState('');
-  const [resultState, setResultState] = useState<ResultState>('idle');
   const [arxivUrl, setArxivUrl] = useState('');
   const [arxivStatus, setArxivStatus] = useState<ArxivStatus>('idle');
   const [arxivMessage, setArxivMessage] = useState('');
+  const [paperTitle, setPaperTitle] = useState('');
+  const [analysis, setAnalysis] = useState<ClassifyResult | null>(null);
+  const [analysisStatus, setAnalysisStatus] = useState<AnalysisStatus>('idle');
+  const [analysisError, setAnalysisError] = useState('');
 
   const t = copy[language];
-  const hasInput = Boolean(fileName || abstractText.trim());
   const abstractCount = useMemo(() => abstractText.trim().length, [abstractText]);
+
+  function resetAnalysis() {
+    setAnalysis(null);
+    setAnalysisStatus('idle');
+    setAnalysisError('');
+  }
 
   function handleFileChange(event: ChangeEvent<HTMLInputElement>) {
     const file = event.target.files?.[0];
     setFileName(file?.name ?? '');
-    setResultState('idle');
+    resetAnalysis();
   }
 
   function handleAbstractChange(event: ChangeEvent<HTMLTextAreaElement>) {
     setAbstractText(event.target.value);
-    setResultState('idle');
+    setPaperTitle(''); // abstract digitado/colado manualmente: sem título associado
+    resetAnalysis();
   }
 
-  function handleSubmit(event: FormEvent<HTMLFormElement>) {
+  async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    setResultState(hasInput ? 'pending-integration' : 'missing-input');
+    if (!abstractText.trim()) {
+      setAnalysis(null);
+      setAnalysisStatus('error');
+      setAnalysisError(String(t.validation));
+      return;
+    }
+    setAnalysisStatus('loading');
+    setAnalysisError('');
+    setAnalysis(null);
+    try {
+      const res = await fetch(`${API_URL}/classify`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ abstract: abstractText.trim(), title: paperTitle.trim(), top_k: 5 }),
+      });
+      if (!res.ok) throw new Error(`status ${res.status}`);
+      const data: ClassifyResult = await res.json();
+      setAnalysis(data);
+      setAnalysisStatus('success');
+    } catch {
+      setAnalysisStatus('error');
+      setAnalysisError(`${t.backendError}${API_URL}.`);
+    }
   }
 
   async function handleFetchArxiv() {
@@ -166,9 +229,11 @@ function App() {
       const summary = doc.querySelector('entry summary');
       if (!summary?.textContent?.trim()) throw new Error('not found');
       setAbstractText(summary.textContent.trim());
+      const titleEl = doc.querySelector('entry title');
+      setPaperTitle(titleEl?.textContent?.replace(/\s+/g, ' ').trim() ?? '');
       setArxivStatus('success');
       setArxivMessage(String(t.arxivSuccess));
-      setResultState('idle');
+      resetAnalysis();
     } catch {
       setArxivStatus('error');
       setArxivMessage(String(t.arxivFetchError));
@@ -223,11 +288,11 @@ function App() {
             <div className="paper-line wide" />
             <div className="paper-line" />
             <div className="paper-line short" />
-            <div className="paper-equation">{'TF-IDF -> Linear model | Neural network'}</div>
+            <div className="paper-equation">{'Abstract -> SPECTER -> SVM | cosseno'}</div>
             <div className="paper-tags">
               <span>cs.LG</span>
-              <span>math.ST</span>
-              <span>stat.ML</span>
+              <span>math.MP</span>
+              <span>astro-ph</span>
             </div>
           </aside>
         </div>
@@ -307,7 +372,9 @@ function App() {
             <span>
               {abstractCount} {t.chars}
             </span>
-            <button type="submit">{t.analyze}</button>
+            <button type="submit" disabled={analysisStatus === 'loading'}>
+              {analysisStatus === 'loading' ? t.analyzing : t.analyze}
+            </button>
           </div>
         </form>
 
@@ -317,19 +384,78 @@ function App() {
             <h2>{t.resultTitle}</h2>
           </div>
 
-          {resultState === 'missing-input' ? (
-            <div className="message warning">{t.validation}</div>
+          {analysisStatus === 'error' ? (
+            <div className="message warning">{analysisError}</div>
           ) : null}
 
-          {resultState === 'pending-integration' ? (
+          {analysisStatus === 'loading' ? (
             <div className="development-state">
-              <span className="status-pill neutral">{t.honestLabel}</span>
-              <h3>{t.pendingTitle}</h3>
-              <p>{t.pendingText}</p>
+              <span className="status-pill neutral">SPECTER + SVM</span>
+              <h3>{t.analyzing}</h3>
             </div>
-          ) : (
-            <p className="idle-copy">{t.idleResult}</p>
-          )}
+          ) : null}
+
+          {analysisStatus === 'success' && analysis ? (
+            <div className="analysis-result">
+              <div className="predicted-card">
+                <span className="predicted-label">{t.predictedTitle}</span>
+                <strong className="predicted-category">{analysis.predicted_category}</strong>
+                <div className="confidence-row">
+                  <div className="confidence-bar">
+                    <div
+                      className="confidence-fill"
+                      style={{ width: `${Math.round(analysis.confidence * 100)}%` }}
+                    />
+                  </div>
+                  <span className="confidence-value">
+                    {Math.round(analysis.confidence * 100)}% {t.confidenceLabel}
+                  </span>
+                </div>
+              </div>
+
+              {analysis.ranking.length > 1 ? (
+                <div className="ranking-block">
+                  <h3>{t.otherCandidates}</h3>
+                  <div className="ranking-list">
+                    {analysis.ranking.slice(1).map((c) => (
+                      <div className="ranking-item" key={c.category}>
+                        <span className="ranking-cat">{c.category}</span>
+                        <div className="ranking-bar">
+                          <div
+                            className="ranking-bar-fill"
+                            style={{ width: `${Math.round(c.score * 100)}%` }}
+                          />
+                        </div>
+                        <span className="ranking-score">{Math.round(c.score * 100)}%</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              ) : null}
+
+              <div className="similar-block">
+                <h3>{t.similarTitle}</h3>
+                <p className="similar-hint">{t.similarHint}</p>
+                <ul className="similar-list">
+                  {analysis.similar_papers.map((p) => (
+                    <li className="similar-item" key={p.id}>
+                      <a href={p.url} target="_blank" rel="noreferrer" className="similar-title">
+                        {p.title || p.id}
+                      </a>
+                      <div className="similar-meta">
+                        <span className="similar-cat">{p.category}</span>
+                        <span className="similar-sim">
+                          {Math.round(p.similarity * 100)}% {t.similarityLabel}
+                        </span>
+                      </div>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            </div>
+          ) : null}
+
+          {analysisStatus === 'idle' ? <p className="idle-copy">{t.idleResult}</p> : null}
 
           <div className="pipeline">
             <h3>{t.pipelineTitle}</h3>

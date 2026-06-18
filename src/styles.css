@@ -550,6 +550,180 @@ textarea:focus {
   font-size: 1.45rem;
 }
 
+.analysis-result {
+  display: flex;
+  flex-direction: column;
+  gap: 22px;
+}
+
+.predicted-card {
+  border-radius: 22px;
+  padding: 22px;
+  background:
+    linear-gradient(135deg, rgba(35, 83, 71, 0.14), rgba(43, 138, 131, 0.12)),
+    rgba(255, 255, 255, 0.4);
+}
+
+.predicted-label {
+  display: block;
+  color: var(--muted);
+  font-size: 0.82rem;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.predicted-category {
+  display: block;
+  margin: 8px 0 16px;
+  color: var(--green);
+  font-family: ui-monospace, SFMono-Regular, Consolas, "Liberation Mono", monospace;
+  font-size: 2.1rem;
+  font-weight: 900;
+}
+
+.confidence-row {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+}
+
+.confidence-bar {
+  flex: 1;
+  height: 12px;
+  border-radius: 999px;
+  background: rgba(35, 83, 71, 0.14);
+  overflow: hidden;
+}
+
+.confidence-fill {
+  height: 100%;
+  border-radius: 999px;
+  background: linear-gradient(135deg, var(--green), var(--teal));
+  transition: width 320ms ease;
+}
+
+.confidence-value {
+  flex: 0 0 auto;
+  color: var(--green);
+  font-weight: 800;
+  font-size: 0.9rem;
+}
+
+.ranking-block h3,
+.similar-block h3 {
+  margin-bottom: 12px;
+  font-size: 1.05rem;
+}
+
+.ranking-list {
+  display: grid;
+  gap: 10px;
+}
+
+.ranking-item {
+  display: grid;
+  grid-template-columns: 130px 1fr 44px;
+  gap: 10px;
+  align-items: center;
+}
+
+.ranking-cat {
+  color: var(--ink);
+  font-family: ui-monospace, SFMono-Regular, Consolas, "Liberation Mono", monospace;
+  font-size: 0.84rem;
+  font-weight: 700;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ranking-bar {
+  height: 8px;
+  border-radius: 999px;
+  background: rgba(58, 110, 165, 0.14);
+  overflow: hidden;
+}
+
+.ranking-bar-fill {
+  height: 100%;
+  border-radius: 999px;
+  background: linear-gradient(135deg, var(--blue), var(--teal));
+  transition: width 320ms ease;
+}
+
+.ranking-score {
+  color: var(--muted);
+  font-size: 0.82rem;
+  font-weight: 700;
+  text-align: right;
+}
+
+.similar-hint {
+  margin-bottom: 14px;
+  color: var(--muted);
+  font-size: 0.9rem;
+}
+
+.similar-list {
+  display: grid;
+  gap: 10px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.similar-item {
+  border: 1px solid rgba(35, 83, 71, 0.1);
+  border-radius: 16px;
+  padding: 12px 14px;
+  background: rgba(255, 255, 255, 0.4);
+  transition:
+    transform 180ms ease,
+    border-color 180ms ease;
+}
+
+.similar-item:hover {
+  transform: translateY(-2px);
+  border-color: rgba(43, 138, 131, 0.5);
+}
+
+.similar-title {
+  display: block;
+  color: var(--ink);
+  font-weight: 720;
+  line-height: 1.45;
+  text-decoration: none;
+}
+
+.similar-title:hover {
+  color: var(--teal);
+  text-decoration: underline;
+}
+
+.similar-meta {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  margin-top: 8px;
+}
+
+.similar-cat {
+  border-radius: 999px;
+  padding: 3px 10px;
+  color: var(--green);
+  font-family: ui-monospace, SFMono-Regular, Consolas, "Liberation Mono", monospace;
+  font-size: 0.76rem;
+  font-weight: 800;
+  background: rgba(43, 138, 131, 0.14);
+}
+
+.similar-sim {
+  color: var(--muted);
+  font-size: 0.8rem;
+  font-weight: 700;
+}
+
 .pipeline {
   margin-top: auto;
   padding-top: 28px;
