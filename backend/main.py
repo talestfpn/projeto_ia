@@ -34,9 +34,15 @@ from sklearn.svm import SVC
 # ----------------------------------------------------------------------------
 # Configuração
 # ----------------------------------------------------------------------------
-BASE_DIR   = Path(__file__).parent
-DATA_PATH  = Path(os.environ.get("ARXIV_DATA",
-                                 BASE_DIR / "data" / "arxiv_amostra_10500_com_embeddings_atualizada.json"))
+BASE_DIR = Path(__file__).parent
+DATA_40K_PATH = BASE_DIR / "data" / "arxiv_amostra_40000_com_embeddings_multilabel.json"
+MODEL_BUNDLE_PATH = Path(os.environ.get(
+    "ARXIV_MODEL_BUNDLE",
+    BASE_DIR / "data" / "arxiv_modelos_40000_calibrados_multilabel.joblib",
+))
+LEGACY_DATA_PATH = BASE_DIR / "data" / "arxiv_amostra_10500_com_embeddings_atualizada.json"
+DEFAULT_DATA_PATH = DATA_40K_PATH if DATA_40K_PATH.exists() and MODEL_BUNDLE_PATH.exists() else LEGACY_DATA_PATH
+DATA_PATH = Path(os.environ.get("ARXIV_DATA", DEFAULT_DATA_PATH))
 MODEL_NAME = os.environ.get("ARXIV_MODEL", "sentence-transformers/allenai-specter")
 SVM_C = float(os.environ.get("ARXIV_SVM_C", "0.03"))
 CACHE_PATH = BASE_DIR / "data" / "svm_cache.joblib"
@@ -56,10 +62,17 @@ def carregar_banco(path: Path):
                 continue
             r = json.loads(linha)
             embeddings.append(r["embedding"])
+            primary_category = r.get("primary_category") or r.get("assigned_category")
+            if not primary_category:
+                raise ValueError(f"Artigo {r.get('id')} sem categoria primaria.")
+            target_categories = r.get("target_categories")
+            if not target_categories:
+                target_categories = [primary_category]
             meta.append({
                 "id": str(r["id"]),
                 "title": (r.get("title") or "").strip(),
-                "category": r["assigned_category"],
+                "category": primary_category,
+                "categories": list(target_categories),
                 "abstract": (r.get("abstract_reduzido") or r.get("abstract") or "").strip(),
             })
     X = np.asarray(embeddings, dtype=np.float32)
@@ -115,19 +128,38 @@ async def lifespan(app: FastAPI):
     X, meta = carregar_banco(DATA_PATH)
     y = np.array([m["category"] for m in meta], dtype=object)
 
-    print(f"[inferencia] treinando SVM em {X.shape[0]} artigos x {X.shape[1]} dims (C={SVM_C:g}) ...")
-    clf = carregar_modelo_svm(X, y, DATA_PATH)
+    dual_head = MODEL_BUNDLE_PATH.exists() and DATA_PATH.name != LEGACY_DATA_PATH.name
+    if dual_head:
+        import joblib
+
+        print(f"[inferencia] carregando modelos calibrados de {MODEL_BUNDLE_PATH} ...")
+        bundle = joblib.load(MODEL_BUNDLE_PATH)
+        required = {
+            "primary_model", "multilabel_model", "primary_classes",
+            "multilabel_classes", "thresholds",
+        }
+        missing = required.difference(bundle)
+        if missing:
+            raise RuntimeError(f"Bundle 40k incompleto. Campos ausentes: {sorted(missing)}")
+        inference_mode = "calibrated_multilabel_40000"
+        clf = None
+    else:
+        print(f"[inferencia] treinando SVM legado em {X.shape[0]} artigos x {X.shape[1]} dims (C={SVM_C:g}) ...")
+        clf = carregar_modelo_svm(X, y, DATA_PATH)
+        bundle = None
+        inference_mode = "legacy_single_label"
 
     print(f"[inferencia] carregando modelo de embeddings '{MODEL_NAME}' (pode baixar na 1a vez) ...")
     from sentence_transformers import SentenceTransformer
     encoder = SentenceTransformer(MODEL_NAME)
 
+    classes = bundle["primary_classes"] if bundle else list(clf.classes_)
     STATE.update(
-        X=X, meta=meta, y=y, clf=clf,
-        classes=clf.classes_, encoder=encoder,
-        sep=encoder.tokenizer.sep_token or "[SEP]",
+        X=X, meta=meta, y=y, clf=clf, bundle=bundle,
+        classes=np.asarray(classes, dtype=object), encoder=encoder,
+        sep=encoder.tokenizer.sep_token or "[SEP]", inference_mode=inference_mode,
     )
-    print(f"[inferencia] pronto. {len(meta)} papers, {len(clf.classes_)} categorias.")
+    print(f"[inferencia] pronto. {len(meta)} papers, {len(classes)} categorias, modo={inference_mode}.")
     yield
     STATE.clear()
 
@@ -168,6 +200,8 @@ class ClassifyOut(BaseModel):
     predicted_category: str
     confidence: float
     ranking: list[CatScore]
+    applicable_categories: list[CatScore]
+    inference_mode: str
     similar_papers: list[SimilarPaper]
 
 
@@ -258,6 +292,8 @@ def health():
         "categories": sorted(map(str, STATE.get("classes", []))),
         "model": MODEL_NAME,
         "data_file": DATA_PATH.name,
+        "model_bundle": MODEL_BUNDLE_PATH.name if MODEL_BUNDLE_PATH.exists() else None,
+        "inference_mode": STATE.get("inference_mode", "carregando"),
         "svm_c": SVM_C,
     }
 
@@ -337,11 +373,38 @@ def classify(req: ClassifyIn):
     texto = f"{titulo} {sep} {req.abstract.strip()}" if titulo else req.abstract.strip()
     q = encoder.encode([texto], normalize_embeddings=True, convert_to_numpy=True)[0].astype(np.float32)
 
-    # classificação (probabilidades -> ranking + confiança)
-    proba = clf.predict_proba(q.reshape(1, -1))[0]
-    ordem = np.argsort(proba)[::-1]
-    n_rank = max(1, min(req.top_k, len(classes)))
-    ranking = [CatScore(category=str(classes[i]), score=float(proba[i])) for i in ordem[:n_rank]]
+    # Categoria primaria ordenada e categorias multi-label independentes.
+    bundle = STATE.get("bundle")
+    if bundle:
+        primary_proba = bundle["primary_model"].predict_proba(q.reshape(1, -1))[0]
+        primary_classes = np.asarray(bundle["primary_classes"], dtype=object)
+        ordem = np.argsort(primary_proba)[::-1]
+        n_rank = max(1, min(req.top_k, len(primary_classes)))
+        ranking = [
+            CatScore(category=str(primary_classes[i]), score=float(primary_proba[i]))
+            for i in ordem[:n_rank]
+        ]
+
+        multi_proba = bundle["multilabel_model"].predict_proba(q.reshape(1, -1))[0]
+        multi_classes = list(map(str, bundle["multilabel_classes"]))
+        thresholds = bundle["thresholds"]
+        selected = {
+            category: float(score)
+            for category, score in zip(multi_classes, multi_proba)
+            if float(score) >= float(thresholds[category])
+        }
+        primary_multi_idx = multi_classes.index(ranking[0].category)
+        selected[ranking[0].category] = float(multi_proba[primary_multi_idx])
+        applicable = [
+            CatScore(category=category, score=score)
+            for category, score in sorted(selected.items(), key=lambda item: item[1], reverse=True)
+        ]
+    else:
+        proba = clf.predict_proba(q.reshape(1, -1))[0]
+        ordem = np.argsort(proba)[::-1]
+        n_rank = max(1, min(req.top_k, len(classes)))
+        ranking = [CatScore(category=str(classes[i]), score=float(proba[i])) for i in ordem[:n_rank]]
+        applicable = [ranking[0]]
 
     # papers similares (cosseno = produto interno, tudo normalizado)
     sims = X @ q
@@ -362,5 +425,7 @@ def classify(req: ClassifyIn):
         predicted_category=ranking[0].category,
         confidence=ranking[0].score,
         ranking=ranking,
+        applicable_categories=applicable,
+        inference_mode=STATE["inference_mode"],
         similar_papers=similares,
     )
