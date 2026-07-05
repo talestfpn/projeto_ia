@@ -24,6 +24,8 @@ interface ClassifyResult {
   predicted_category: string;
   confidence: number;
   ranking: CatScore[];
+  applicable_categories: CatScore[];
+  inference_mode: string;
   similar_papers: SimilarPaper[];
 }
 
@@ -80,17 +82,20 @@ const copy = {
       'A área de retorno está pronta. Cole um abstract e clique em "Classificar abstract" para ver a categoria prevista e papers similares.',
     predictedTitle: 'Categoria prevista',
     confidenceLabel: 'confiança',
-    topCategories: 'Top 3 categorias',
-    topCategoryHint: 'Ranking das categorias mais prováveis para este abstract.',
+    applicableTitle: 'Outras categorias aplicáveis',
+    applicableHint: 'Cada probabilidade é independente e, por isso, não precisa somar 100%.',
+    noSecondaryLabels: 'Nenhuma categoria secundária ultrapassou o limiar calibrado.',
+    topCategories: 'Ranking da categoria principal',
+    topCategoryHint: 'Top 3 do classificador multiclass; a ordem importa apenas para a categoria principal.',
     topPrediction: 'Top 1',
     similarTitle: 'Papers similares',
-    similarHint: 'Os mais próximos no banco de 10.500 artigos.',
+    similarHint: 'Os artigos mais próximos no banco de embeddings ativo.',
     similarityLabel: 'similaridade',
     pipelineTitle: 'Pipeline',
     pipeline: ['Entrada do abstract', 'Embedding (SPECTER)', 'SVM + vizinhos', 'Categoria + similares'],
     datasetTitle: 'Base de conhecimento',
     datasetText:
-      'O projeto usa o arXiv Dataset da Cornell University como fonte de abstracts, títulos, autores e categorias. Nesta demo local, o banco usa 10.500 artigos com embeddings.',
+      'O projeto usa o arXiv Dataset da Cornell University. A nova pipeline suporta 40.000 artigos e preserva múltiplas categorias por paper.',
     categoriesTitle: 'Categorias',
     categoriesText:
       'O sistema classifica nas 15 maiores categorias finas do projeto (cs.LG, hep-ph, cs.CV, astro-ph, e outras).',
@@ -102,7 +107,7 @@ const copy = {
       'A similaridade do cosseno entre embeddings recupera os artigos mais parecidos do banco.',
     modelTitle: 'Classificador',
     modelText:
-      'Um SVM linear treinado sobre os embeddings decide o Top 3 de categorias mais prováveis do abstract.',
+      'Dois classificadores calibrados estimam a categoria principal e as categorias secundárias aplicáveis.',
     sampleTags: ['cs.LG', 'hep-ph', 'cs.CV', 'astro-ph', 'quant-ph'],
   },
   en: {
@@ -143,17 +148,20 @@ const copy = {
       'The output area is ready. Paste an abstract and click "Classify abstract" to see the predicted category and similar papers.',
     predictedTitle: 'Predicted category',
     confidenceLabel: 'confidence',
-    topCategories: 'Top 3 categories',
-    topCategoryHint: 'Ranking of the most likely categories for this abstract.',
+    applicableTitle: 'Other applicable categories',
+    applicableHint: 'Each probability is independent, so they do not need to add up to 100%.',
+    noSecondaryLabels: 'No secondary category exceeded its calibrated threshold.',
+    topCategories: 'Primary category ranking',
+    topCategoryHint: 'Multiclass Top 3; ordering matters only for the primary category.',
     topPrediction: 'Top 1',
     similarTitle: 'Similar papers',
-    similarHint: 'The closest ones in the 10,500-paper database.',
+    similarHint: 'The closest papers in the active embedding database.',
     similarityLabel: 'similarity',
     pipelineTitle: 'Pipeline',
     pipeline: ['Abstract input', 'Embedding (SPECTER)', 'SVM + neighbors', 'Category + similar'],
     datasetTitle: 'Knowledge base',
     datasetText:
-      'The project uses the Cornell University arXiv Dataset as a source of abstracts, titles, authors, and categories. This local demo uses 10,500 papers with embeddings.',
+      'The project uses the Cornell University arXiv Dataset. The new pipeline supports 40,000 papers and preserves multiple categories per paper.',
     categoriesTitle: 'Categories',
     categoriesText:
       'The system classifies into the 15 largest fine-grained categories (cs.LG, hep-ph, cs.CV, astro-ph, and others).',
@@ -165,7 +173,7 @@ const copy = {
       'Cosine similarity between embeddings retrieves the most alike articles in the database.',
     modelTitle: 'Classifier',
     modelText:
-      'A linear SVM trained on the embeddings returns the Top 3 most likely categories for the abstract.',
+      'Two calibrated classifiers estimate the primary category and applicable secondary categories.',
     sampleTags: ['cs.LG', 'hep-ph', 'cs.CV', 'astro-ph', 'quant-ph'],
   },
 } satisfies Record<Language, Record<string, string | string[]>>;
@@ -193,6 +201,10 @@ function App() {
 
   const t = copy[language];
   const abstractCount = useMemo(() => abstractText.trim().length, [abstractText]);
+  const secondaryCategories = useMemo(
+    () => analysis?.applicable_categories?.filter((item) => item.category !== analysis.predicted_category) ?? [],
+    [analysis],
+  );
 
   function resetAnalysis() {
     setAnalysis(null);
@@ -471,6 +483,36 @@ function App() {
                     {Math.round(analysis.confidence * 100)}% {t.confidenceLabel}
                   </span>
                 </div>
+              </div>
+
+              <div className="applicable-block">
+                <div className="applicable-heading">
+                  <h3>{t.applicableTitle}</h3>
+                  {analysis.inference_mode === 'calibrated_multilabel_40000' ? (
+                    <span className="status-pill success">Multi-label 40k</span>
+                  ) : (
+                    <span className="status-pill neutral">Single-label 10.5k</span>
+                  )}
+                </div>
+                <p className="ranking-hint">{t.applicableHint}</p>
+                {secondaryCategories.length > 0 ? (
+                  <div className="label-list">
+                    {secondaryCategories.map((category) => (
+                      <div className="label-item" key={category.category}>
+                        <span className="ranking-cat">{category.category}</span>
+                        <div className="ranking-bar">
+                          <div
+                            className="ranking-bar-fill independent"
+                            style={{ width: `${Math.round(category.score * 100)}%` }}
+                          />
+                        </div>
+                        <span className="ranking-score">{Math.round(category.score * 100)}%</span>
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <p className="empty-labels">{t.noSecondaryLabels}</p>
+                )}
               </div>
 
               {analysis.ranking.length > 0 ? (
