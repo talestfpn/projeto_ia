@@ -1,14 +1,14 @@
 # Motor de inferência — Arxiv Classifier
 
 Backend FastAPI que recebe um abstract e devolve a **categoria do arXiv** mais provável
-(SVM sobre embeddings SPECTER) e uma lista de **papers similares** do nosso banco de 1.500 artigos.
+(SVM sobre embeddings SPECTER) e uma lista de **papers similares** do nosso banco de 10.500 artigos.
 
 ## 1. Dados
 
 Copie a saída da **Pipeline 3** para a pasta `data/`:
 
 ```
-backend/data/arxiv_amostra_1500_com_embeddings.json
+backend/data/arxiv_amostra_10500_com_embeddings_atualizada.json
 ```
 
 Esse arquivo (JSON Lines) já contém os embeddings + título + abstract + categoria de cada paper.
@@ -47,7 +47,7 @@ Exemplo:
 ```bash
 curl -X POST http://localhost:8000/classify \
   -H "Content-Type: application/json" \
-  -d '{"abstract": "We propose a deep neural network for image classification...", "top_k": 5}'
+  -d '{"abstract": "We propose a deep neural network for image classification...", "top_k": 3, "similar_k": 5}'
 ```
 
 Resposta:
@@ -66,7 +66,8 @@ Resposta:
 
 ## 4. Configuração (variáveis de ambiente, opcionais)
 
-- `ARXIV_DATA`  — caminho do JSON do banco (padrão: `data/arxiv_amostra_1500_com_embeddings.json`).
+- `ARXIV_DATA`  — caminho do JSON do banco (padrão: `data/arxiv_amostra_10500_com_embeddings_atualizada.json`).
 - `ARXIV_MODEL` — modelo de embeddings (padrão: `sentence-transformers/allenai-specter`).
+- `ARXIV_SVM_C` — hiperparâmetro C do SVM linear (padrão: `0.03`).
 
 O front-end (React/Vite) consome este backend; veja a variável `VITE_API_URL` no projeto raiz.

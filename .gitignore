@@ -26,3 +26,16 @@ Thumbs.db
 
 # TypeScript cache
 *.tsbuildinfo
+
+# ML experiment artifacts
+# Keep the reproducible Colab notebooks, ignore generated datasets and outputs.
+backend/pipelines/*
+!backend/pipelines/pipelines/
+backend/pipelines/pipelines/*
+!backend/pipelines/pipelines/*.ipynb
+
+# Local experiment screenshots and metric exports
+backend/métricas/
+
+# Local document backups; keep the final documentation file tracked
+backend/documentacao/*.backup_*.docx

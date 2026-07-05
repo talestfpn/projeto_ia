@@ -1,7 +1,8 @@
-import { ChangeEvent, FormEvent, useMemo, useState } from 'react';
+﻿import { ChangeEvent, FormEvent, useMemo, useState } from 'react';
 
 type Language = 'pt' | 'en';
 type ArxivStatus = 'idle' | 'loading' | 'success' | 'error';
+type PdfStatus = 'idle' | 'loading' | 'success' | 'error';
 type AnalysisStatus = 'idle' | 'loading' | 'success' | 'error';
 
 const API_URL = (import.meta.env.VITE_API_URL as string | undefined) ?? 'http://localhost:8000';
@@ -26,6 +27,18 @@ interface ClassifyResult {
   similar_papers: SimilarPaper[];
 }
 
+interface ArxivPaper {
+  id: string;
+  title: string;
+  abstract: string;
+}
+
+interface PdfAbstract {
+  filename: string;
+  title: string;
+  abstract: string;
+}
+
 const copy = {
   pt: {
     eyebrow: 'Classificador de artigos',
@@ -43,10 +56,14 @@ const copy = {
     arxivInvalidUrl: 'URL inválida. Use o formato https://arxiv.org/abs/XXXX.XXXXX',
     arxivFetchError: 'Erro ao buscar o artigo. Verifique o link e tente novamente.',
     uploadTitle: 'Anexar paper em PDF',
-    uploadHint: 'Selecione um arquivo PDF para a futura etapa de extração de texto.',
+    uploadHint: 'Selecione um PDF para extrair automaticamente o abstract.',
     uploadButton: 'Escolher PDF',
     noFile: 'Nenhum arquivo selecionado',
     fileReady: 'Arquivo pronto para demonstração',
+    pdfLoading: 'Extraindo abstract do PDF...',
+    pdfSuccess: 'Abstract extraído do PDF',
+    pdfExtractError:
+      'Não foi possível extrair o abstract desse PDF. Cole o resumo manualmente.',
     abstractTitle: 'Colar abstract',
     abstractHint:
       'Cole o resumo do artigo que será enviado ao motor de classificação.',
@@ -63,15 +80,17 @@ const copy = {
       'A área de retorno está pronta. Cole um abstract e clique em "Classificar abstract" para ver a categoria prevista e papers similares.',
     predictedTitle: 'Categoria prevista',
     confidenceLabel: 'confiança',
-    otherCandidates: 'Outras categorias prováveis',
+    topCategories: 'Top 3 categorias',
+    topCategoryHint: 'Ranking das categorias mais prováveis para este abstract.',
+    topPrediction: 'Top 1',
     similarTitle: 'Papers similares',
-    similarHint: 'Os mais próximos no banco de 1.500 artigos.',
+    similarHint: 'Os mais próximos no banco de 10.500 artigos.',
     similarityLabel: 'similaridade',
     pipelineTitle: 'Pipeline',
     pipeline: ['Entrada do abstract', 'Embedding (SPECTER)', 'SVM + vizinhos', 'Categoria + similares'],
     datasetTitle: 'Base de conhecimento',
     datasetText:
-      'O projeto usa o arXiv Dataset da Cornell University como fonte de abstracts, títulos, autores e categorias.',
+      'O projeto usa o arXiv Dataset da Cornell University como fonte de abstracts, títulos, autores e categorias. Nesta demo local, o banco usa 10.500 artigos com embeddings.',
     categoriesTitle: 'Categorias',
     categoriesText:
       'O sistema classifica nas 15 maiores categorias finas do projeto (cs.LG, hep-ph, cs.CV, astro-ph, e outras).',
@@ -83,7 +102,7 @@ const copy = {
       'A similaridade do cosseno entre embeddings recupera os artigos mais parecidos do banco.',
     modelTitle: 'Classificador',
     modelText:
-      'Um SVM linear treinado sobre os embeddings decide a categoria mais provável do abstract.',
+      'Um SVM linear treinado sobre os embeddings decide o Top 3 de categorias mais prováveis do abstract.',
     sampleTags: ['cs.LG', 'hep-ph', 'cs.CV', 'astro-ph', 'quant-ph'],
   },
   en: {
@@ -101,10 +120,13 @@ const copy = {
     arxivInvalidUrl: 'Invalid URL. Use the format https://arxiv.org/abs/XXXX.XXXXX',
     arxivFetchError: 'Failed to fetch the paper. Check the link and try again.',
     uploadTitle: 'Attach paper PDF',
-    uploadHint: 'Select a PDF file for the future text extraction step.',
+    uploadHint: 'Select a PDF to automatically extract its abstract.',
     uploadButton: 'Choose PDF',
     noFile: 'No file selected',
     fileReady: 'File ready for demo',
+    pdfLoading: 'Extracting abstract from PDF...',
+    pdfSuccess: 'Abstract extracted from PDF',
+    pdfExtractError: 'Could not extract the abstract from this PDF. Paste it manually.',
     abstractTitle: 'Paste abstract',
     abstractHint:
       'Paste the paper abstract that will be sent to the classification engine.',
@@ -121,15 +143,17 @@ const copy = {
       'The output area is ready. Paste an abstract and click "Classify abstract" to see the predicted category and similar papers.',
     predictedTitle: 'Predicted category',
     confidenceLabel: 'confidence',
-    otherCandidates: 'Other likely categories',
+    topCategories: 'Top 3 categories',
+    topCategoryHint: 'Ranking of the most likely categories for this abstract.',
+    topPrediction: 'Top 1',
     similarTitle: 'Similar papers',
-    similarHint: 'The closest ones in the 1,500-paper database.',
+    similarHint: 'The closest ones in the 10,500-paper database.',
     similarityLabel: 'similarity',
     pipelineTitle: 'Pipeline',
     pipeline: ['Abstract input', 'Embedding (SPECTER)', 'SVM + neighbors', 'Category + similar'],
     datasetTitle: 'Knowledge base',
     datasetText:
-      'The project uses the Cornell University arXiv Dataset as a source of abstracts, titles, authors, and categories.',
+      'The project uses the Cornell University arXiv Dataset as a source of abstracts, titles, authors, and categories. This local demo uses 10,500 papers with embeddings.',
     categoriesTitle: 'Categories',
     categoriesText:
       'The system classifies into the 15 largest fine-grained categories (cs.LG, hep-ph, cs.CV, astro-ph, and others).',
@@ -141,7 +165,7 @@ const copy = {
       'Cosine similarity between embeddings retrieves the most alike articles in the database.',
     modelTitle: 'Classifier',
     modelText:
-      'A linear SVM trained on the embeddings decides the most likely category for the abstract.',
+      'A linear SVM trained on the embeddings returns the Top 3 most likely categories for the abstract.',
     sampleTags: ['cs.LG', 'hep-ph', 'cs.CV', 'astro-ph', 'quant-ph'],
   },
 } satisfies Record<Language, Record<string, string | string[]>>;
@@ -156,6 +180,8 @@ function parseArxivId(input: string): string | null {
 function App() {
   const [language, setLanguage] = useState<Language>('pt');
   const [fileName, setFileName] = useState('');
+  const [pdfStatus, setPdfStatus] = useState<PdfStatus>('idle');
+  const [pdfMessage, setPdfMessage] = useState('');
   const [abstractText, setAbstractText] = useState('');
   const [arxivUrl, setArxivUrl] = useState('');
   const [arxivStatus, setArxivStatus] = useState<ArxivStatus>('idle');
@@ -174,10 +200,37 @@ function App() {
     setAnalysisError('');
   }
 
-  function handleFileChange(event: ChangeEvent<HTMLInputElement>) {
+  async function handleFileChange(event: ChangeEvent<HTMLInputElement>) {
     const file = event.target.files?.[0];
     setFileName(file?.name ?? '');
     resetAnalysis();
+    if (!file) {
+      setPdfStatus('idle');
+      setPdfMessage('');
+      return;
+    }
+
+    setPdfStatus('loading');
+    setPdfMessage(String(t.pdfLoading));
+
+    const body = new FormData();
+    body.append('file', file);
+
+    try {
+      const res = await fetch(`${API_URL}/pdf/abstract`, {
+        method: 'POST',
+        body,
+      });
+      if (!res.ok) throw new Error(`status ${res.status}`);
+      const data: PdfAbstract = await res.json();
+      setAbstractText(data.abstract);
+      setPaperTitle(data.title);
+      setPdfStatus('success');
+      setPdfMessage(String(t.pdfSuccess));
+    } catch {
+      setPdfStatus('error');
+      setPdfMessage(String(t.pdfExtractError));
+    }
   }
 
   function handleAbstractChange(event: ChangeEvent<HTMLTextAreaElement>) {
@@ -201,7 +254,12 @@ function App() {
       const res = await fetch(`${API_URL}/classify`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ abstract: abstractText.trim(), title: paperTitle.trim(), top_k: 5 }),
+        body: JSON.stringify({
+          abstract: abstractText.trim(),
+          title: paperTitle.trim(),
+          top_k: 3,
+          similar_k: 5,
+        }),
       });
       if (!res.ok) throw new Error(`status ${res.status}`);
       const data: ClassifyResult = await res.json();
@@ -223,14 +281,11 @@ function App() {
     setArxivStatus('loading');
     setArxivMessage('');
     try {
-      const res = await fetch(`https://export.arxiv.org/api/query?id_list=${id}`);
-      const text = await res.text();
-      const doc = new DOMParser().parseFromString(text, 'application/xml');
-      const summary = doc.querySelector('entry summary');
-      if (!summary?.textContent?.trim()) throw new Error('not found');
-      setAbstractText(summary.textContent.trim());
-      const titleEl = doc.querySelector('entry title');
-      setPaperTitle(titleEl?.textContent?.replace(/\s+/g, ' ').trim() ?? '');
+      const res = await fetch(`${API_URL}/arxiv/${encodeURIComponent(id)}`);
+      if (!res.ok) throw new Error(`status ${res.status}`);
+      const paper: ArxivPaper = await res.json();
+      setAbstractText(paper.abstract);
+      setPaperTitle(paper.title);
       setArxivStatus('success');
       setArxivMessage(String(t.arxivSuccess));
       resetAnalysis();
@@ -353,7 +408,11 @@ function App() {
             <small>{fileName || t.noFile}</small>
           </label>
 
-          {fileName ? <div className="status-pill success">{t.fileReady}</div> : null}
+          {pdfMessage ? (
+            <div className={`status-pill ${pdfStatus === 'success' ? 'success' : pdfStatus === 'error' ? 'error' : 'neutral'}`}>
+              {pdfMessage}
+            </div>
+          ) : null}
 
           <div className="section-heading compact">
             <span className="section-index">03</span>
@@ -400,6 +459,7 @@ function App() {
               <div className="predicted-card">
                 <span className="predicted-label">{t.predictedTitle}</span>
                 <strong className="predicted-category">{analysis.predicted_category}</strong>
+                <span className="prediction-rank">{t.topPrediction}</span>
                 <div className="confidence-row">
                   <div className="confidence-bar">
                     <div
@@ -413,12 +473,14 @@ function App() {
                 </div>
               </div>
 
-              {analysis.ranking.length > 1 ? (
+              {analysis.ranking.length > 0 ? (
                 <div className="ranking-block">
-                  <h3>{t.otherCandidates}</h3>
+                  <h3>{t.topCategories}</h3>
+                  <p className="ranking-hint">{t.topCategoryHint}</p>
                   <div className="ranking-list">
-                    {analysis.ranking.slice(1).map((c) => (
+                    {analysis.ranking.slice(0, 3).map((c, index) => (
                       <div className="ranking-item" key={c.category}>
+                        <span className="ranking-position">{index + 1}</span>
                         <span className="ranking-cat">{c.category}</span>
                         <div className="ranking-bar">
                           <div
@@ -492,3 +554,4 @@ function InfoCard({ title, text }: { title: string; text: string }) {
 }
 
 export default App;
+
