@@ -557,11 +557,24 @@ textarea:focus {
 }
 
 .predicted-card {
+  position: relative;
   border-radius: 22px;
   padding: 22px;
   background:
     linear-gradient(135deg, rgba(35, 83, 71, 0.14), rgba(43, 138, 131, 0.12)),
     rgba(255, 255, 255, 0.4);
+}
+
+.prediction-rank {
+  position: absolute;
+  top: 18px;
+  right: 18px;
+  border-radius: 999px;
+  padding: 6px 10px;
+  color: var(--green);
+  font-size: 0.76rem;
+  font-weight: 900;
+  background: rgba(255, 255, 255, 0.55);
 }
 
 .predicted-label {
@@ -616,6 +629,13 @@ textarea:focus {
   font-size: 1.05rem;
 }
 
+.ranking-hint {
+  margin-bottom: 12px;
+  color: var(--muted);
+  font-size: 0.9rem;
+  line-height: 1.5;
+}
+
 .ranking-list {
   display: grid;
   gap: 10px;
@@ -623,9 +643,21 @@ textarea:focus {
 
 .ranking-item {
   display: grid;
-  grid-template-columns: 130px 1fr 44px;
+  grid-template-columns: 30px 118px 1fr 44px;
   gap: 10px;
   align-items: center;
+}
+
+.ranking-position {
+  display: grid;
+  width: 28px;
+  height: 28px;
+  place-items: center;
+  border-radius: 50%;
+  color: white;
+  font-size: 0.78rem;
+  font-weight: 900;
+  background: linear-gradient(135deg, var(--green), var(--blue));
 }
 
 .ranking-cat {
@@ -853,5 +885,9 @@ textarea:focus {
 
   .input-footer button {
     width: 100%;
+  }
+
+  .ranking-item {
+    grid-template-columns: 30px 88px 1fr 40px;
   }
 }
